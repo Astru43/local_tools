@@ -1,6 +1,9 @@
-*.*
+*.py
 !time_calc.py
 !work_timer.py
-!TIME_USAGE_TEMPLATE.md
-!.gitignore
 
+*.md
+!TIME_USAGE_TEMPLATE.md
+!README.md
+
+time.csv
