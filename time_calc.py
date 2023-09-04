@@ -1,11 +1,25 @@
-from io import TextIOWrapper
-import sys
+from __future__ import annotations
+
 import getopt
 import re
+import sys
+from dataclasses import dataclass
+from io import TextIOWrapper
+from typing import Any, NamedTuple
 
-Time = str
-Date = str
-Hours = float
+
+class colors:
+    HEADER = "\033[93m"
+    CYAN = "\033[96m"
+    RED = "\033[31m"
+    ERROR = RED
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    DIMM = "\033[2m"
+
+
+def Error(val: str):
+    return f"{colors.ERROR}{val}{colors.ENDC}"
 
 
 class Task:
@@ -27,32 +41,73 @@ class Task:
             return ""
 
 
-DayHourTuple = tuple[Time, Hours, Task]
-DayHours = tuple[Date, list[DayHourTuple]]
+Date = str
+# DayHours = list[tuple[str, float, Task]]
+
+
+class Hours(NamedTuple):
+    time: str
+    hours: float
+    task: Task
+
+
+def address(val: Any):
+    print(hex(id(val)))
+
+
+def splitTask(task: Task):
+    strTask = str(task)
+    if len(strTask) <= 80:
+        return strTask
+    lastSpace = strTask[:80].rfind(' ')
+    if lastSpace != -1:
+        return [strTask[:lastSpace], strTask[lastSpace+1:]]
+    else:
+        return strTask
+
+
+@dataclass
+class Day(tuple[Date, list[Hours]]):
+
+    # __slots__ = 'date', 'hours'
+    date: Date
+    hours: list[Hours]
+
+    def __init__(self, date: Date, hours: list[Hours] | None = None) -> None:
+        self.date = date
+        self.hours = hours if hours else []
+
+    def addHours(self, time: str, hours: float, task: Task | None = None):
+        self.hours.append(Hours(time, hours, task if task else Task()))
+
+    def __getitem__(self, index):
+        return (self.date, self.hours)[index]
+
+    def __iter__(self):
+        yield self.date
+        yield self.hours
+        return
 
 
 class Week:
     week: str
-    days: list[DayHours]
-    __currentDate = -1
+    days: list[Day]
 
     def __init__(self, week: str) -> None:
         self.week = week
         self.days = []
 
     def addDate(self, date: Date):
-        self.__currentDate += 1
-        self.days.append((date, []))
+        self.days.append(Day(date))
 
-    def addHours(self, time: Time, hours: float):
-        day_hours = self.days[self.__currentDate][1]
-        day_hours.append((time, hours, Task()))
+    def addHours(self, time: str, hours: float):
+        self.days[-1].addHours(time, hours)
 
     def total(self):
         return sum(hour for _, dayHours in self.days for _, hour, _ in dayHours)
 
     def __str__(self) -> str:
-        def printOddEven(str: str, odd: bool, end: str | None = '\n'):
+        def printOddEven(str: str, odd: int | bool, end: str | None = '\n'):
             return (f"{colors.DIMM if not odd else ''}{str}{colors.ENDC}{end}")
 
         val = 0.0
@@ -61,7 +116,14 @@ class Week:
             odd = idx % 2
             ret += printOddEven(f"{date:}", odd, end='')
             for time, hour, task in dayHours:
-                ret += printOddEven(f"\t{time}\t{hour}\t{task}", odd)
+                sTask = splitTask(task)
+                if isinstance(sTask, list):
+                    ret += printOddEven(f"\t{time}\t{hour}\t{sTask[0]}", odd)
+                    for s in sTask[1:]:
+                        ret += printOddEven(
+                            f"\t{' ':{len(time)}}\t{' ':{len(str(hour))}}\t{s}", odd)
+                else:
+                    ret += printOddEven(f"\t{time}\t{hour}\t{sTask}", odd)
                 val += hour
         ret += '\n' if (val <= 0) else ''
         ret += f"{colors.CYAN}Total:\t\t{val:g}h{colors.ENDC}\n\n"
@@ -69,16 +131,6 @@ class Week:
 
 
 WeekHours = list[Week]
-
-
-class colors:
-    HEADER = "\033[93m"
-    CYAN = "\033[96m"
-    RED = "\033[31m"
-    ERROR = RED
-    ENDC = "\033[0m"
-    BOLD = "\033[1m"
-    DIMM = "\033[2m"
 
 
 def writeTotals(weeks: WeekHours):
@@ -122,61 +174,79 @@ def writeToCSV(weeks: WeekHours):
             write_to(file)
 
 
+def cleanFiles():
+    import os
+    if os.path.isfile("time.csv"):
+        os.remove("time.csv")
+    if os.path.isfile("TOTAL.md"):
+        os.remove("TOTAL.md")
+    exit(0)
+
+
 def handleOptions():
+    def checkWeekAndWeeks(opts: dict):
+        week = any(val in opts for val in ["-w", "--week"])
+        weeks = any(val in opts for val in ["-W", "--weeks"])
+        return week and weeks
+
     try:
-        opts = getopt.getopt(sys.argv[1:], "lw:W:", ["csv", "week=", 'weeks='])
+        opts = getopt.getopt(sys.argv[1:], "lw:W:", [
+                             "clean", "csv", "week=", 'weeks='])
     except getopt.GetoptError as e:
-        print(f"{colors.ERROR}{e.msg}{colors.ENDC}")
+        print(Error(f"{e.msg}"))
         raise RuntimeError()
 
     writeCSV = False
     latestOnly = False
-    selWeek = None
     selWeeks = None
+
+    if checkWeekAndWeeks(dict(opts[0])):
+        print(Error("Week and weeks can't be used together"))
+        raise RuntimeError()
+
     for opt in opts[0]:
         match opt:
+            case ("--clean", _):
+                return cleanFiles()
             case ("--csv", _):
                 writeCSV = True
             case ("-l", _):
                 latestOnly = True
             case ("--week" | "-w", w):
-                if not re.match("[0123]?\d\.[01]?\d(?:\.\d{2}(?:\d\d)?)?(?!\d)+", w):
-                    print(
-                        f"{colors.ERROR}{w} is not valid start date of week{colors.ENDC}")
+                if not re.match(r"[0123]?\d\.[01]?\d(?:\.\d{2}(?:\d\d)?)?(?!\d)+", w):
+                    print(Error(f"{w} is not valid start date of week"))
                     raise RuntimeError()
                 else:
-                    selWeek = next(
-                        (week for week in weeks if w in week.week), None)
+                    selWeeks = [week for week in weeks if w in week.week]
             case ("--weeks" | "-W", w):
-                if not re.match("\d", w):
-                    print(f"{colors.ERROR}No valid range given{colors.ENDC}")
+                if not re.match(r"\d", w):
+                    print(Error("No valid range given"))
                     raise RuntimeError()
                 else:
                     selWeeks = weeks[-int(w):]
-        if selWeek and selWeeks:
-            print(f"{colors.ERROR}Week and weeks can't be used together{colors.ENDC}")
-            raise RuntimeError()
-    return (writeCSV, latestOnly, selWeek, selWeeks)
+    return (writeCSV, latestOnly, selWeeks)
 
 
 week = re.compile(
-    "^## (Week +\d\d?\.\d\d?(?:\.\d\d)?)(?: *- *\d\d?\.\d\d?(?:\.\d\d)?)")
+    r"^## (Week +\d\d?\.\d\d?(?:\.\d\d)?)(?: *- *\d\d?\.\d\d?(?:\.\d\d)?)")
 dayTime = re.compile(
-    "(?:(?:(\d\d?\.\d\d?(?!\d*h)) )?(\d\d?:\d\d?))|(?:\|\s+?(\d+\s*?-\s*?\d+)\s+?\|)")
-hours = re.compile("(\d(\.\d*)?)h")
-task = re.compile("(^\d\. .*)|\| *(?:(\d)\.|(meet)|(\.{3})) *\|")
+    r"(?:(?:(\d\d?\.\d\d?(?!\d*h)) )?(\d\d?:\d\d?))|(?:\|\s+?(\d+\s*?-\s*?\d+)\s+?\|)")
+hours = re.compile(r"(\d(\.\d*)?)h")
+task = re.compile(r"(^\d+\. .*)|\| *(?:(\d+)\.|(meet)|(\.{3})) *\|")
 
 
 if __name__ == "__main__":
     weeks = WeekHours()
-    with open(".\TIME_USAGE.md") as file:
+    with open("./TIME_USAGE.md") as file:
         for line in file:
             res = week.search(line)
             if res:
                 weeks.append(Week(res.group(1)))
                 continue
 
-            curWeek = weeks[len(weeks) - 1] if len(weeks) > 0 else None
+            curWeek = weeks[-1] if weeks else None
+            if not curWeek:
+                continue
             res = dayTime.search(line)
             time = None
             if res:
@@ -191,35 +261,33 @@ if __name__ == "__main__":
                 curWeek.addHours(time, float(res.group(1)))
             elif time:
                 curWeek.addHours(time, 0)
-
             res = task.search(line)
             if res:
                 if taskStr := res.group(1):
                     for _week in weeks:
-                        [task.setTask(taskStr[3:]) for _, dayHours in _week.days for _,
+                        [task.setTask(taskStr[len(task.task) + 2:]) for _, dayHours in _week.days for _,
                             _, task in dayHours if task.task and taskStr.startswith(task.task)]
                 elif taskNum := res.group(2):
-                    dayHours = curWeek.days[len(curWeek.days) - 1][1]
-                    dayHours[len(dayHours) - 1][2].setTask(taskNum)
+                    dayHours = curWeek.days[-1].hours
+                    dayHours[-1].task.setTask(taskNum)
                 elif taskMeet := res.group(3):
-                    dayHours = curWeek.days[len(curWeek.days) - 1][1]
-                    dayHours[len(dayHours) - 1][2].setTask("Meeting")
+                    dayHours = curWeek.days[-1].hours
+                    dayHours[-1].task.setTask("Meeting")
                 elif taskCon := res.group(4):
-                    dayHours = curWeek.days[len(curWeek.days) - 1][1]
-                    dayHours[len(dayHours) - 1][2].setTask(taskCon)
-
-    if len(weeks) > 0:
-        writeTotals(weeks)
+                    dayHours = curWeek.days[-1].hours
+                    dayHours[-1].task.setTask(taskCon)
 
     writeCSV = None
     latestOnly = None
-    selWeek = None
     selWeeks = None
     if len(sys.argv) >= 2:
         try:
-            (writeCSV, latestOnly, selWeek, selWeeks) = handleOptions()
+            (writeCSV, latestOnly, selWeeks) = handleOptions()
         except RuntimeError:
             exit(-1)
+
+    if len(weeks) > 0:
+        writeTotals(weeks)
 
     print()
     if latestOnly:
@@ -230,17 +298,15 @@ if __name__ == "__main__":
             total += week.total()
             print(week)
         print(f"Cycle total:\t{total}h")
-    elif selWeek:
-        print(selWeek)
     else:
         print("Totals:\n")
         for week in weeks:
             print(week)
 
     if writeCSV:
-        if selWeek:
-            writeToCSV([selWeek])
-        elif selWeeks:
+        if latestOnly:
+            writeToCSV(weeks[-1:])
+        if selWeeks:
             writeToCSV(selWeeks)
         else:
             writeToCSV(weeks)

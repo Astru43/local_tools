@@ -10,6 +10,8 @@ All options for `time_calc.py` options
 -w, --week  <value>    Print selected week. Value format dd.mm[.yy]
 -W, --weeks <value>    Print last <value> weeks. Value is any positive integer
 -l                     Print latest week
+
+--clean                Delete files created by the script
 ```
 
 ## work_timer.py

@@ -29,7 +29,7 @@ def TimeFormat(time: float):
 def TimeDiference(start: float, end: float):
     dstart = datetime.fromtimestamp(start)
     dend = datetime.fromtimestamp(end)
-    return f'{strfdelta("%D days %H:%M:%S", dend - dstart)}'
+    return f'{strfdelta("%H:%M:%S", dend - dstart)}'
 
 
 def cleanLastLine():
