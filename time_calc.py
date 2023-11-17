@@ -231,7 +231,7 @@ week = re.compile(
     r"^## (Week +\d\d?\.\d\d?(?:\.\d\d)?)(?: *- *\d\d?\.\d\d?(?:\.\d\d)?)")
 dayTime = re.compile(
     r"(?:(?:(\d\d?\.\d\d?(?!\d*h)) )?(\d\d?:\d\d?))|(?:\|\s+?(\d+\s*?-\s*?\d+)\s+?\|)")
-hours = re.compile(r"(\d(\.\d*)?)h")
+hours = re.compile(r"(\d+(\.\d*)?)h")
 task = re.compile(r"(^\d+\. .*)|\| *(?:(\d+)\.|(meet)|(\.{3})) *\|")
 
 
@@ -300,8 +300,11 @@ if __name__ == "__main__":
         print(f"Cycle total:\t{total}h")
     else:
         print("Totals:\n")
+        total = 0
         for week in weeks:
+            total += week.total()
             print(week)
+        print(f'Total sum:\t{total}h')
 
     if writeCSV:
         if latestOnly:
