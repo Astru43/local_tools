@@ -1,3 +1,5 @@
+.vscode/
+
 *.py
 !time_calc.py
 !work_timer.py
